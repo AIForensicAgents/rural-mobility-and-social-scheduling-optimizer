@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<title>Rural Mobility & Social Scheduling Optimizer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js" defer></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+* { font-family: 'Inter', sans-serif; }
+[x-cloak] { display: none !important; }
+.tab-active { background: #1e6b3a; color: white; }
+.fade-in { animation: fadeIn 0.3s ease-in; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse-soft { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
+.pulse-soft { animation: pulse-soft 2s infinite; }
+.touch-target { min-height: 48px; min-width: 48px; }
+input, select, textarea, button { font-size: 16px !important; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-thumb { background: #c4d4c8; border-radius: 3px; }
+.card-shadow { box-shadow: 0 2px 12px rgba(30,107,58,0.08); }
+</style>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        forest: { 50:'#f0f7f2', 100:'#d4eadb', 200:'#a8d5b7', 300:'#6db88a', 400:'#3d9960', 500:'#1e6b3a', 600:'#185a30', 700:'#124826', 800:'#0d371d', 900:'#082513' },
+        warmgray: { 50:'#faf9f7', 100:'#f0eeeb', 200:'#e2dfd9', 300:'#c9c4bb', 400:'#a8a196', 500:'#8a8275', 600:'#6d6559', 700:'#564f45', 800:'#403b33', 900:'#2b2722' },
+        sky: { 50:'#f0f8ff', 100:'#d6ecfc', 200:'#b0d9f9', 300:'#7bbef3', 400:'#4aa3eb', 500:'#2186d6', 600:'#1a6bb0', 700:'#14528a', 800:'#0f3c66', 900:'#0a2844' },
+        sunset: { 400:'#f0a050', 500:'#e88a30' }
+      }
+    }
+  }
+}
+</script>
+</head>
+<body class="bg-warmgray-50 text-warmgray-800 min-h-screen" x-data="app()" x-init="init()">
+
+<!-- Loading Overlay -->
+<div x-show="loading" x-cloak class="fixed inset-0 bg-white/80 z-50 flex items-center justify-center">
+  <div class="text-center">
+    <div class="w-12 h-12 border-4 border-forest-200 border-t-forest-500 rounded-full animate-spin mx-auto mb-3"></div>
+    <p class="text-forest-700 font-medium" x-text="loadingMsg">Loading...</p>
+  </div>
+</div>
+
+<!-- Header -->
+<header class="bg-gradient-to-r from-forest-600 to-forest-500 text-white shadow-lg sticky top-0 z-40">
+  <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <span class="text-2xl">🚐</span>
+      <div>
+        <h1 class="font-bold text-lg leading-tight">Rural Mobility</h1>
+        <p class="text-forest-100 text-xs">Community Transport Optimizer</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button @click="showNotifications = !showNotifications" class="touch-target relative p-2 rounded-full hover:bg-forest-700/30 transition">
+        <span class="text-xl">🔔</span>
+        <span x-show="unreadNotifications > 0" class="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] flex items-center justify-center font-bold" x-text="unreadNotifications"></span>
+      </button>
+      <button @click="showProfile = !showProfile" class="touch-target p-2 rounded-full hover:bg-forest-700/30 transition">
+        <span class="text-xl">👤</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- Notifications Panel -->
+<div x-show="showNotifications" x-cloak @click.away="showNotifications=false" class="fixed inset-x-0 top-16 z-30 max-w-lg mx-auto px-4 fade-in">
+  <div class="bg-white rounded-xl shadow-xl p-4 max-h-64 overflow-y-auto">
+    <h3 class="font-bold text-forest-700 mb-2">📋 Notifications</h3>
+    <template x-if="notifications.length === 0">
+      <p class="text-warmgray-400 text-sm py-4 text-center">No notifications yet! 🌿</p>
+    </template>
+    <template x-for="(n, i) in notifications" :key="i">
+      <div class="border-b border-warmgray-100 py-2 last:border-0">
+        <p class="text-sm" x-text="n.msg"></p>
+        <p class="text-xs text-warmgray-400" x-text="n.time"></p>
+      </div>
+    </template>
+  </div>
+</div>
+
+<!-- Profile / Onboarding Modal -->
+<div x-show="showProfile || !profileComplete" x-cloak class="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
+  <div class="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6 fade-in" @click.away="profileComplete ? showProfile=false : null">
+    <h2 class="text-xl font-bold text-forest-700 mb-1" x-text="profileComplete ? '👤 Your Profile' : '👋 Welcome!'"></h2>
+    <p class="text-warmgray-500 text-sm mb-4" x-text="profileComplete ? 'Update your information' : 'Let\'s set you up in 30 seconds'"></p>
+    
+    <div class="space-y-3">
+      <div>
+        <label class="block text-sm font-medium text-warmgray-600 mb-1">Your Name</label>
+        <input x-model="profile.name" type="text" placeholder="e.g. Dorothy Smith" class="w-full touch-target border border-warmgray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-forest-300 focus:border-forest-400 outline-none">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-warmgray-600 mb-1">Phone Number</label>
+        <input x-model="profile.phone" type="tel" placeholder="e.g. (555) 123-4567" class="w-full touch-target border border-warmgray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-forest-300 focus:border-forest-400 outline-none">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-warmgray-600 mb-1">Your Role</label>
+        <select x-model="profile.role" class="w-full touch-target border border-warmgray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-forest-300 focus:border-forest-400 outline-none bg-white">
+          <option value="">Select your role...</option>
+          <option value="rider">🧓 Rider (I need rides)</option>
+          <option value="volunteer">🚗 Volunteer Driver</option>
+          <option value="coordinator">📋 Transport Coordinator</option>
+          <option value="caregiver">💛 Family/Caregiver</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-warmgray-600 mb-1">Home Location / Town</label>
+        <input x-model="profile.location" type="text" placeholder="e.g. Maple Grove, County Rd 12" class="w-full touch-target border border-warmgray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-forest-300 focus:border-forest-400 outline-none">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-warmgray-600 mb-1">Accessibility Needs</label>
+        <div class="flex flex-wrap gap-2">
+          <template x-for="need in ['Wheelchair','Walker','Oxygen','Visual Aid','Hearing Aid','None']" :key="need">
+            <button @click="toggleAccessibility(need)" class="touch-target px-4 py-2 rounded-full border text-sm font-medium transition"
+              :class="profile.accessibility.includes(need) ? 'bg-forest-500 text-white border-forest-500' : 'bg-white text-warmgray-600 border-warmgray-200 hover:border-forest-300'"
+              x-text="need"></button>
+          </template>
+        </div>
+      </div>
+      <div x-show="profile.role === 'volunteer'">
+        <label class="block text-sm font-medium text-warmgray-600 mb-1">Vehicle Can Accommodate</label>
+        <div class="flex flex-wrap gap-2">
+          <template x-for="cap in ['Wheelchair Ramp','Extra Legroom','Oxygen Tank','4+ Passengers']" :key="cap">
+            <button @click="toggleVehicleCap(cap)" class="touch-target px-4 py-2 rounded-full border text-sm font-medium transition"
+              :class="profile.vehicleCaps.includes(cap) ? 'bg-sky-500 text-white border-sky-500' : 'bg-white text-warmgray-600 border-warmgray-200 hover:border-sky-300'"
+              x-text="cap"></button>
+          </template>
+        </div>
+      </div>
+      <button @click="saveProfile()" class="w-full touch-target bg-forest-500 hover:bg-forest-600 text-white font-bold rounded-xl py-3 transition pulse-soft mt-2">
+        <span x-text="profileComplete ? '💾 Save Changes' : '🚀 Get Started'"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Main Content -->
+<main class="max-w-lg mx-auto px-4 pb-24" x-show="profileComplete" x-cloak>
+
+  <!-- Quick Greeting -->
+  <div class="mt-4 mb-3 fade-in">
+    <p class="text-lg font-semibold text-warmgray-700">Hello, <span x-text="profile.name?.split(' ')[0] || 'Friend'" class="text-forest-600"></span>! 🌻</p>
+    <p class="text-sm text-warmgray-400" x-text="getGreeting()"></p>
+  </div>
+
+  <!-- PRIMARY ACTION: Book a Ride (for riders) or View Requests (for volunteers/coordinators) -->
+  <div x-show="profile.role === 'rider' || profile.role === 'caregiver'" class="fade-in">
+    <button @click="tab = 'book'" class="w-full touch-target bg-gradient-to-r from-forest-500 to-forest-400 text-white font-bold rounded-2xl py-5 px-6 text-lg shadow-lg hover:shadow-xl transition transform hover:scale-[1.01] mb-4 card-shadow">
+      🚐 Book a Ride
+    </button>
+  </div>
+  <div x-show="profile.role === 'volunteer'" class="fade-in">
+    <button @click="tab = 'requests'" class="w-full touch-target bg-gradient-to-r from-sky-500 to-sky-400 text-white font-bold rounded-2xl py-5 px-6 text-lg shadow-lg hover:shadow-xl transition transform hover:scale-[1.01] mb-4">
+      📋 View Ride Requests (<span x-text="pendingRequests.length"></span>)
+    </button>
+  </div>
+  <div x-show="profile.role === 'coordinator'" class="fade-in">
+    <button @click="tab = 'dashboard'" class="w-full touch-target bg-gradient-to-r from-sunset-400 to-sunset-500 text-white font-bold rounded-2xl py-5 px-6 text-lg shadow-lg hover:shadow-xl transition transform hover:scale-[1.01] mb-4">
+      📊 Open Dashboard
+    </button>
+  </div>
+
+  <!-- Tab Navigation -->
+  <div class="flex gap-1 bg-warmgray-100 rounded-xl p-1 mb-4 overflow-x-auto">
+    <button @click="tab='home'" class="touch-target flex-1 min-w-0 px-3 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap" :class="tab==='home' ? 'tab-active' : 'text-warmgray-500 hover:bg-warmgray-200'">🏠 Home</button>
+    <button @click="tab='book'" class="touch-target flex-1 min-w-0 px-3 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap" :class="tab==='book' ? 'tab-active' : 'text-warmgray-500 hover:bg-warmgray-200'">🚐 Book</button>
+    <button @click="tab='trips'" class="touch-target flex-1 min-w-0 px-3 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap" :class="tab==='trips' ? 'tab-active' : 'text-warmgray-500 hover:bg-warmgray-200'">📅 Trips</button>
+    <button x-show="profile.role==='volunteer' || profile.role==='coordinator'" @click="tab='requests'" class="touch-target flex-1 min-w-0 px-3 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap" :class="tab==='requests' ? 'tab-active' : 'text-warmgray-500 hover:bg-warmgray-200'">📋 Requests</button>
+    <button x-show="profile.role==='coordinator'" @click="tab='dashboard'" class="touch-target flex-1 min-w-0 px-3 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap" :class="tab==='dashboard' ? 'tab-active' : 'text-warmgray-500 hover:bg-warmgray-200'">📊 Dash</button>
+  </div>
+
+  <!-- HOME TAB -->
+  <div x-show="tab==='home'" class="space-y-4 fade-in">
+    <!-- Upcoming Trip Card -->
+    <div class="bg-white rounded-2xl p-5 card-shadow">
+      <h3 class="font-bold text-forest-700 mb-3">📅 Upcoming Trip</h3>
+      <template x-if="nextTrip">
+        <div class="space-y-2">
+          <div class="flex items-start gap-3">
+            <div class="w-10 h-10 bg-forest-100 rounded-full flex items-center justify-center text-lg" x-text="tripTypeEmoji(nextTrip.type)"></div>
+            <div class="flex-1">
+              <p class="font-semibold" x-text="nextTrip.destination"></p>
+              <p class="text-sm text-warmgray-500" x-text="formatTripDate(nextTrip.date) + ' at ' + nextTrip.time"></p>
+              <div class="flex gap-2 mt-1">
+                <span class="text-xs bg-forest-100 text-forest-700 px-2 py-0.5 rounded-full" x-text="nextTrip.type"></span>
+                <span class="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full" x-text="nextTrip.status"></span>
+              </div>
+            </div>
+          </div>
+          <template x-if="nextTrip.driver">
+            <p class="text-sm text-warmgray-500 ml-13">🚗 Driver: <span class="text-warmgray-700 font-medium" x-text="nextTrip.driver"></span></p>
+          </template>
+        </div>
+      </template>
+      <template x-if="!nextTrip">
+        <p class="text-warmgray-400 text-sm text-center py-4">No upcoming trips. Book one above! 🌿</p>
+      </template>
+    </div>
+
+    <!-- Quick Stats for Coordinators -->
+    <div x-show="profile.role==='coordinator'" class="grid grid-cols-2 gap-3">
+      <div class="bg-white rounded-xl p-4 card-shadow text-center">
+        <p class="text-2xl font-bold text-forest-600" x-text="allTrips.length">0</p>
+        <p class="text-xs text-warmgray-500">Total Trips</p>
+      </div>
+      <div class="bg-white rounded-xl p-4 card-shadow text-center">
+        <p class="text-2xl font-bold text-sky-600" x-text="pendingRequests.length">0</p>
+        <p class="text-xs text-warmgray-500">Pending</p>
+      </div>
+      <div class="bg-white rounded-xl p-4 card-shadow text-center">
+        <p class="text-2xl font-bold text-sunset-500" x-text="volunteers.length">0</p>
+        <p class="text-xs text-warmgray-500">Volunteers</p>
+      </div>
+      <div class="bg-white rounded-xl p-4 card-shadow text-center">
+        <p class="text-2xl font-bold text-green-600" x-text="completedTrips">0</p>
+        <p class="text-xs text-warmgray-500">Completed</p>
+      </div>
+    </div>
+
+    <!-- Community Board -->
+    <div class="bg-white rounded-2xl p-5 card-shadow">
+      <h3 class="font-bold text-forest-700 mb-3">🌻 Community Board</h3>
+      <div class="space-y-2">
+        <div class="bg-forest-50 rounded-xl p-3">
+          <p class="text-sm font-medium">☕ Weekly Coffee Social</p>
+          <p class="text-xs text-warmgray-500">Every Wednesday, 10 AM - Community Center</p>
+          <p class="text-xs text-forest-600 mt-1">🚐 Shared ride available!</p>
+        </div>
+        <div class="bg-sky-50 rounded-xl p-3">
+          <p class="text-sm font-medium">🏥 Mobile Health Clinic</p>
+          <p class="text-xs text-warmgray-500">Next Friday, 9 AM - Town Hall</p>
+          <p class="text-xs text-sky-600 mt-1">🚐 Free transport provided</p>
+        </div>
+        <div class="bg-warmgray-50 rounded-xl p-3">
+          <p class="text-sm font-medium">🛒 Grocery Run</p>
+          <p class="text-xs text-warmgray-500">Every Monday, 1 PM - Pickup at your door</p>
+          <p class="text-xs text-sunset-500 mt-1">🚐 2 spots left this week</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Demand Prediction -->
+    <div class="bg-white rounded-2xl p-5 card-shadow">
+      <h3 class="font-bold text-forest-700 mb-3">🔮 Demand Insights</h3>
+      <button @click="predictDemand()" class="w-full touch-target bg-forest-50 hover:bg-forest-100 text-forest-700 font-medium rounded-xl py-3 transition" :disabled="aiWorking">
+        <span x-show="!aiWorking">🤖 Predict This Week's Demand</span>
+        <span x-show="aiWorking" class="flex items-center justify-center gap-2">
+          <span class="w-4 h-4 border-2 border-forest-300 border-t-forest-600 rounded-full animate-spin"></span>
+          Analyzing...
+        </span>
+      </button>
+      <div x-show="demandInsight" class="mt-3 text-sm text-warmgray-600 bg-forest-50 rounded-xl p-3" x-html="demandInsight"></div>
+    </div>
+  </div>
+
+  <!-- BOOK TAB -->
+  <div x-show="tab==='book'" class="space-y-4 fade-in">
+    <div class="bg-white rounded-2xl p-5 card-shadow">
+      <h3 class="font-bold text-forest-700 text-lg mb-4">🚐 Book a Ride</h3>
+      
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium text-warmgray-600 mb-1">Trip Type</label>
+          <select x-model="newTrip.type" class="w-full touch-target border border-warmgray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-forest-300 outline-none bg-white">
+            <option value="">Select trip type...</option>
+            <option value="Medical">🏥 Medical Appointment</option>
+            <option value="Social">☕ Social Visit / Event</option>
+            <option value="Grocery">🛒 Grocery Shopping</option>
+            <option value="Pharmacy">💊 Pharmacy</option>
+            <option value="Church">⛪ Church / Worship</option>
+            <option value="Other">📍 Other</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-warmgray-600 mb-1">Pickup Location</label>
+          <input x-model="newTrip.pickup" type="text" :placeholder="profile.location || 'Your address'" class="w-full touch-target border border-warmgray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-forest-300 outline-none">
+          <button x-show="profile.location" @click="newTrip.pickup = profile.location" class="text-xs text-forest-500 mt-1 underline">Use home address</button>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-warmgray-600 mb-1">Destination</label>
+          <input x-model="newTrip.destination" type="text" placeholder="e.g. County Medical Center" class="w-full touch-target border border-warmgray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-forest-300 outline-none">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium text-warmgray-600 mb-1">Date</label>
+            <input x-model="newTrip.date" type="date" :min="todayDate()" class="w-full touch-target border border-warmgray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-forest-300 outline-none">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-warmgray-600 mb-1">Time</label>
+            <input x-model="newTrip.time" type="time" class="w-full touch-target border border-warmgray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-forest-300 outline-none">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-warmgray-600 mb-1">Return Trip?</label>
+          <div class="flex gap-3">
+            <button @click="newTrip.roundTrip = true" class="touch-target flex-1 px-4 py-3 rounded-xl border text-sm font-medium transition" :class="newTrip.roundTrip ? 'bg-forest-500 text-white border-forest-500' : 'bg-white text-warmgray-600 border-warmgray-200'">🔄 Round Trip</button>
+            <button @click="newTrip.roundTrip = false" class="touch-target flex-1 px-4 py-3 rounded-xl border text-sm font-medium transition" :class="!newTrip.roundTrip ? 'bg-forest-500 text-white border-forest-500' : 'bg-white text-warmgray-600 border-warmgray-200'">➡️ One Way</button>
+          </div>
+        </div>
+
+        <div x-show="newTrip.roundTrip">
+          <label class="block text-sm font-medium text-warmgray-600 mb-1">Return Time (approx)</label>
+          <input x-model="newTrip.returnTime" type="time" class="w-full touch-target border border-warmgray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-forest-300 outline-none">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-warmgray-600 mb-1">Passengers</label>
+          <div class="flex items-center gap-4">
+            <button @click="newTrip.passengers = Math.max(1, newTrip.passengers-1)" class="touch-target w-12 h-12 bg-warmgray-100 rounded-full flex items-center justify-center text-xl font-bold text-warmgray-600 hover:bg-warmgray-200 transition">−</button>
+            <span class="text-2xl font-bold text-forest-600" x-text="newTrip.passengers"></span>
+            <button @click="newTrip.passengers = Math.min(6, newTrip.passengers+1)" class="touch-target w-12 h-12 bg-warmgray-100 rounded-full flex items-center justify-center text-xl font-bold text-warmgray-600 hover:bg-warmgray-200 transition">+</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-warmgray-600 mb-1">Special Needs for this Trip</label>
+          <div class="flex flex-wrap gap-2">
+            <template x-for="need in ['Wheelchair','Walker','Oxygen','Extra Time','Companion Seat']" :key="need">
+              <button @click="toggleTripNeed(need)" class="px-3 py-2 rounded-full border text-xs font-medium transition"
+                :class="newTrip.needs.includes(need) ? 'bg-sky-500 text-white border-sky-500' : 'bg-white text-warmgray-600 border-warmgray-200 hover:border-sky-300'"
+                x-text="need"></button>
+            </template>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-warmgray-600 mb-1">Notes for Driver</label>
+          <textarea x-model="newTrip.notes" placeholder="e.g. Gate code is 1234, I'll be waiting on the porch" rows="2" class="w-full border border-warmgray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-forest-300 outline-none text-sm"></textarea>
+        </div>
+
+        <!-- AI Optimize Button -->
+        <button @click="optimizeTrip()" class="w-full touch-target bg-sky-50 hover:bg-sky-100 text-sky-700 font-medium rounded-xl py-3 transition text-sm" :disabled="aiWorking">
+          <span x-show="!aiWorking">🤖 Find Best Match & Optimize Route</span>
+          <span x-show="aiWorking" class="flex items-center justify-center gap-2">
+            <span class="w-4 h-4 border-2 border-sky-300 border-t-sky-600 rounded-full animate-spin"></span>
+            Optimizing...
+          </span>
+        </button>
+
+        <!-- Optimization Result -->
+        <div x-show="optimizationResult" class="bg-forest-50 rounded-xl p-4 space-y-2">
+          <h4 class="font-bold text-forest-700 text-sm">✅ Optimization Result</h4>
+          <div x-html="optimizationResult" class="text-sm text-warmgray-600"></div>
+        </div>
+
+        <!-- Submit -->
+        <button @click="submitTrip()" class="w-full touch-target bg-forest-500 hover:bg-forest-600 text-white font-bold rounded-xl py-4 transition text-lg shadow-md" :disabled="!canSubmitTrip()">
+          📞 Request This Ride
+        </button>
+        <p class="text-center text-xs text-warmgray-400">You'll get a confirmation and driver details via notification</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRIPS TAB -->
+  <div x-show="tab==='trips'" class="space-y-4 fade-in">
+    <h3 class="font-bold text-forest-700 text-lg">📅 Your Trips</h3>
+    
+    <template x-if="allTrips.length === 0">
+      <div class="bg-white rounded-2xl p-8 card-shadow text-center">
+        <p class="text-4xl mb-3">🌻</p>
+        <p class="text-warmgray-500">No trips yet. Book your first ride!</p>
+        <button @click="tab='book'" class="mt-3 touch-target bg-forest-500 text-white font-medium rounded-xl px-6 py-3 transition hover:bg-forest-600">Book a Ride</button>
+      </div>
+    </template>
+
+    <template x-for="(trip, i) in sortedTrips" :key="trip.id">
+      <div class="bg-white rounded-2xl p-4 card-shadow">
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg" 
+            :class="trip.status==='Confirmed' ? 'bg-green-100' : trip.status==='Pending' ? 'bg-yellow-100' : trip.status==='Completed' ? 'bg-warmgray-100' : 'bg-red-100'"
+            x-text="tripTypeEmoji(trip.type)"></div>
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold truncate" x-text="trip.destination"></p>
+            <p class="text-sm text-warmgray-500" x-text="formatTripDate(trip.date) + ' at ' + trip.time"></p>
+            <div class="flex flex-wrap gap-1 mt-1">
+              <span class="text-xs px-2 py-0.5 rounded-full"
+                :class="trip.status==='Confirmed' ? 'bg-green-100 text-green-700' : trip.status==='Pending' ? 'bg-yellow-100 text-yellow-700' : trip.status==='Completed' ? 'bg-warmgray-100 text-warmgray-600' : 'bg-red-100 text-red-700'"
+                x-text="trip.status"></span>
+              <span class="text-xs bg-warmgray-100 text-warmgray-600 px-2 py-0.5 rounded-full" x-text="trip.type"></span>
+              <template x-for="n in trip.needs" :key="n">
+                <span class="text-xs bg-sky-100 text-sky-600 px-2 py-0.5 rounded-full" x-text="n"></span>
+              </template>
+            </div>
+            <template x-if="trip.driver">
+              <p class="text-xs text-warmgray-500 mt-1">🚗 <span x-text="trip.driver"></span></p>
+            </template>
+          </div>
+          <button x-show="trip.status==='Pending'" @click="cancelTrip(trip.id)" class="touch-target text-red-400 hover:text-red-600 text-sm font-medium">Cancel</button>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- REQUESTS TAB (Volunteers & Coordinators) -->
+  <div x-show="tab==='requests'" class="space-y-4 fade-in">
+    <h3 class="font-bold text-forest-700 text-lg">📋 Ride Requests</h3>
+    
+    <template x-if="pendingRequests.length === 0">
+      <div class="bg-white rounded-2xl p-8 card-shadow text-center">
+        <p class="text-4xl mb-3">✅</p>
+        <p class="text-warmgray-500">All caught up! No pending requests.</p>
+      </div>
+    </template>
+
+    <template x-for="req in pendingRequests" :key="req.id">
+      <div class="bg-white rounded-2xl p-4 card-shadow">
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center text-lg" x-text="tripTypeEmoji(req.type)"></div>
+          <div class="flex-1">
+            <p class="font-semibold" x-text="req.riderName || 'Anonymous'"></p>
+            <p class="text-sm text-warmgray-700"><span class="text-warmgray-400">From:</span> <span x-text="req.pickup"></span></p>
+            <p class="text-sm text-warmgray-700"><span class="text-warmgray-400">To:</span> <span x-text="req.destination"></span></p>
+            <p class="text-sm text-warmgray-500" x-text="formatTripDate(req.date) + ' at ' + req.time"></p>
+            <div class="flex flex-wrap gap-1 mt-1">
+              <template x-for="n in req.needs" :key="n">
+                <span class="text-xs bg-sky-100 text-sky-600 px-2 py-0.5 rounded-full" x-text="n"></span>
+              </template>
+              <span class="text-xs bg-warmgray-100 text-warmgray-600 px-2 py-0.5 rounded-full" x-text="req.passengers + ' passenger(s)'"></span>
+            </div>
+            <template x-if="req.notes">
+              <p class="text-xs text-warmgray-400 mt-1 italic" x-text="'📝 ' + req.notes"></p>
+            </template>
+          </div>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button @click="acceptRequest(req.id)" class="touch-target flex-1 bg-forest-500 hover:bg-forest-600 text-white font-medium rounded-xl py-2 transition text-sm">✅ Accept</button>
+          <button @click="declineRequest(req.id)" class="touch-target flex-1 bg-warmgray-100 hover:bg-warmgray-200 text-warmgray-600 font-medium rounded-xl py-2 transition text-sm">❌ Decline</button>
+        </div>
+      </div>
+    </template>
+
+    <!-- AI Route Optimization for Coordinators -->
+    <div x-show="profile.role==='coordinator' && pendingRequests.length >= 2" class="bg-white rounded-2xl p-5 card-shadow">
+      <h4 class="font-bold text-forest-700 mb-2">🤖 Batch Route Optimization</h4>
+      <p class="text-sm text-warmgray-500 mb-3">Optimize routes for all pending requests to maximize shared rides and minimize drive time.</p>
+      <button @click="batchOptimize()" class="w-full touch-target bg-sunset-400 hover:bg-sunset-500 text-white font-medium rounded-xl py-3 transition" :disabled="aiWorking">
+        <span x-show="!aiWorking">⚡ Optimize All Routes</span>
+        <span x-show="aiWorking" class="flex items-center justify-center gap-2">
+          <span class="w-4 h-4 border-2 border-white/50 border-t-white rounded-full animate-spin"></span>
+          Optimizing...
+        </span>
+      </button>
+      <div x-show="batchResult" class="mt-3 text-sm text-warmgray-600 bg-sunset-400/10 rounded-xl p-3" x-html="batchResult"></div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD TAB (Coordinators) -->
+  <div x-show="tab==='dashboard'" class="space-y-4 fade-in">
+    <h3 class="font-bold text-forest-700 text-lg">📊 Coordinator Dashboard</h3>
+    
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-2 gap-3">
+      <div class="bg-white rounded-xl p-4 card-shadow">
+        <p class="text-xs text-warmgray-400 mb-1">This Week's Rides</p>
+        <p class="text-3xl font-bold text-forest-600" x-text="weeklyTrips">0</p>
+      </div>
+      <div class="bg-white rounded-xl p-4 card-shadow">
+        <p class="text-xs text-warmgray-400 mb-1">Active Volunteers</p>
+        <p class="text-3xl font-bold text-sky-600" x-text="volunteers.length">0</p>
+      </div>
+      <div class="bg-white rounded-xl p-4 card-shadow">
+        <p class="text-xs text-warmgray-400 mb-1">No-Show Rate</p>
+        <p class="text-3xl font-bold text-sunset-500" x-text="noShowRate + '%'">0%</p>
+      </div>
+      <div class="bg-white rounded-xl p-4 card-shadow">
+        <p class="text-xs text-warmgray-400 mb-1">Subsidy Used</p>
+        <p class="text-3xl font-bold text-green-600">$<span x-text="subsidyUsed">0</span></p>
+      </div>
+    </div>
+
+    <!-- Volunteer List -->
+    <div class="bg-white rounded-2xl p-5 card-shadow">
+      <div class="flex items-center justify-between mb-3">
+        <h4 class="font-bold text-forest-700">🚗 Volunteers</h4>
+        <button @click="addSampleVolunteer()" class="text-xs text-forest-500 underline">+ Add Sample</button>
+      </div>
+      <template x-if="volunteers.length === 0">
+        <p class="text-sm text-warmgray-400 text-center py-4">No volunteers registered yet.</p>
+      </template>
+      <div class="space-y-2">
+        <template x-for="v in volunteers" :key="v.id">
+          <div class="flex items-center gap-3 bg-warmgray-50 rounded-xl p-3">
+            <div class="w-8 h-8 bg-forest-100 rounded-full flex items-center justify-center text-sm">🚗</div>
+            <div class="flex-1">
+              <p class="text-sm font-medium" x-text="v.name"></p>
+              <p class="text-xs text-warmgray-400" x-text="v.location + ' • ' + v.vehicleCaps.join(', ')"></p>
+            </div>
+            <span class="text-xs px-2 py-0.5 rounded-full" :class="v.available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'" x-text="v.available ? 'Available' : 'Busy'"></span>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- AI Demand Forecast -->
+    <div class="bg-white rounded-2xl p-5 card-shadow">
+      <h4 class="font-bold text-forest-700 mb-2">🔮 Weekly Forecast</h4>
+      <button @click="generateForecast()" class="w-full touch-target bg-forest-50 hover:bg-forest-100 text-forest-700 font-medium rounded-xl py-3 transition text-sm" :disabled="aiWorking">
+        <span x-show="!aiWorking">🤖 Generate AI Forecast</span>
+        <span x-show="aiWorking" class="flex items-center justify-center gap-2">
+          <span class="w-4 h-4 border-2 border-forest-300 border-t-forest-600 rounded-full animate-spin"></span>
+          Generating...
+        </span>
+      </button>
+      <div x-show="forecastResult" class="mt-3 text-sm text-warmgray-600 bg-forest-50 rounded-xl p-3" x-html="forecastResult"></div>
+    </div>
+
+    <!-- Subsidy Tracker -->
+    <div class="bg-white rounded-2xl p-5 card-shadow">
+      <h4 class="font-bold text-forest-700 mb-2">💰 Subsidy Tracker</h4>
+      <div class="space-y-2">
+        <div class="flex justify-between text-sm">
+          <span class="text-warmgray-500">Monthly Budget</span>
+          <span class="font-medium">$<span x-text="subsidyBudget">2000</span></span>
+        </div>
+        <div class="w-full bg-warmgray-100 rounded-full h-3">
+          <div class="bg-forest-500 h-3 rounded-full transition-all" :style="'width: ' + Math.min(100, (subsidyUsed/subsidyBudget)*100) + '%'"></div>
+        </div>
+        <div class="flex justify-between text-xs text-warmgray-400">
+          <span>$<span x-text="subsidyUsed">0</span> used</span>
+          <span>$<span x-text="Math.max(0, subsidyBudget - subsidyUsed)">2000</span> remaining</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- Toast Notifications -->
+<div class="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4">
+  <template x-for="(toast, i) in toasts" :key="i">
+    <div class="mb-2 bg-warmgray-800 text-white rounded-xl px-4 py-3 shadow-xl flex items-center gap-2 fade-in" x-show="toast.show">
+      <span x-text="toast.emoji"></span>
+      <p class="text-sm flex-1" x-text="toast.msg"></p>
+    </div>
+  </template>
+</div>
+
+<!-- Error Display -->
+<div x-show="errorMsg" x-cloak class="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4">
+  <div class="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 shadow-xl fade-in">
+    <p class="text-sm font-medium" x-text="errorMsg"></p>
+    <button @click="errorMsg=''" class="text-xs underline mt-1">Dismiss</button>
+  </div>
+</div>
+
+<script>
+// Global AI tracking variables
+window.aiTotalInputTokens = 0;
+window.aiTotalOutputTokens = 0;
+window.aiTotalTime = 0;
+window.aiAliasTimes = {};
+
+async function callAI(prompt, retries = 3) {
+  const startTime = Date.now();
+  const alias = 'genericAI';
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const res = await fetch('https://16504442930.work/run_prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias, params: { prompt } })
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        if (attempt === retries - 1) {
+          // Use AI to reformat error
+          try {
+            const errRes = await fetch('https://16504442930.work/run_prompt', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ alias: 'genericAI', params: { prompt: `Reformat this API error into a user-friendly message that empowers the user to fix it. Include the full original error. Return JSON with key "message" as a string. Error: ${errText}` } })
+            });
+            if (errRes.ok) {
+              const errData = await errRes.json();
+              throw new Error(errData.message || errText);
+            }
+          } catch(e2) {}
+          throw new Error(`Service temporarily unavailable. Please try again. (Details: ${errText})`);
+        }
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      const data = await res.json();
+      const elapsed = Date.now() - startTime;
+      window.aiTotalTime += elapsed;
+      window.aiAliasTimes[alias] = (window.aiAliasTimes[alias] || 0) + elapsed;
+      if (data.input_tokens) window.aiTotalInputTokens += data.input_tokens;
+      if (data.output_tokens) window.aiTotalOutputTokens += data.output_tokens;
+      return data;
+    } catch (err) {
+      if (attempt === retries - 1) throw err;
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+}
+
+function app() {
+  return {
+    // State
+    loading: false,
+    loadingMsg: 'Loading...',
+    tab: 'home',
+    showProfile: false,
+    showNotifications: false,
+    profileComplete: false,
+    aiWorking: false,
+    errorMsg: '',
+    toasts: [],
+
+    // Profile
+    profile: {
+      name: '',
+      phone: '',
+      role: '',
+      location: '',
+      accessibility: [],
+      vehicleCaps: []
+    },
+
+    // Trips
+    allTrips: [],
+    newTrip: {
+      type: '',
+      pickup: '',
+      destination: '',
+      date: '',
+      time: '',
+      roundTrip: false,
+      returnTime: '',
+      passengers: 1,
+      needs: [],
+      notes: ''
+    },
+
+    // Volunteers
+    volunteers: [],
+
+    // Dashboard
+    subsidyBudget: 2000,
+    subsidyUsed: 0,
+
+    // AI Results
+    optimizationResult: '',
+    demandInsight: '',
+    batchResult: '',
+    forecastResult: '',
+
+    // Notifications
+    notifications: [],
+    unreadNotifications: 0,
+
+    // Computed
+    get nextTrip() {
+      const upcoming = this.allTrips
+        .filter(t => t.status !== 'Cancelled' && t.status !== 'Completed')
+        .sort((a, b) => new Date(a.date + 'T' + a.time) - new Date(b.date + 'T' + b.time));
+      return upcoming[0] || null;
+    },
+    get sortedTrips() {
+      return [...this.allTrips].sort((a, b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time));
+    },
+    get pendingRequests() {
+      return this.allTrips.filter(t => t.status === 'Pending');
+    },
+    get completedTrips() {
+      return this.allTrips.filter(t => t.status === 'Completed').length;
+    },
+    get weeklyTrips() {
+      const now = new Date();
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      return this.allTrips.filter(t => new Date(t.date) >= weekAgo).length;
+    },
+    get noShowRate() {
+      if (this.allTrips.length === 0) return 0;
+      const noShows = this.allTrips.filter(t => t.status === 'No-Show').length;
+      return Math.round((noShows / this.allTrips.length) * 100);
+    },
+
+    // Init
+    init() {
+      const saved = localStorage.getItem('ruralMobility');
+      if (saved) {
+        try {
+          const data = JSON.parse(saved);
+          Object.assign(this.profile, data.profile || {});
+          this.allTrips = data.allTrips || [];
+          this.volunteers = data.volunteers || [];
+          this.notifications = data.notifications || [];
+          this.subsidyUsed = data.subsidyUsed || 0;
+          this.profileComplete = !!(this.profile.name && this.profile.role && this.profile.location);
+        } catch(e) { console.error(e); }
+      }
+      if (!this.profile.accessibility) this.profile.accessibility = [];
+      if (!this.profile.vehicleCaps) this.profile.vehicleCaps = [];
+      
+      // Add sample data if first time coordinator
+      if (this.profileComplete && this.profile.role === 'coordinator' && this.volunteers.length === 0) {
+        this.addSampleData();
+      }
+    },
+
+    save() {
+      localStorage.setItem('ruralMobility', JSON.stringify({
+        profile: this.profile,
+        allTrips: this.allTrips,
+        volunteers: this.volunteers,
+        notifications: this.notifications,
+        subsidyUsed: this.subsidyUsed
+      }));
+    },
+
+    // Profile
+    toggleAccessibility(need) {
+      const idx = this.profile.accessibility.indexOf(need);
+      if (need === 'None') {
+        this.profile.accessibility = ['None'];
+        return;
+      }
+      this.profile.accessibility = this.profile.accessibility.filter(n => n !== 'None');
+      if (idx > -1) this.profile.accessibility.splice(idx, 1);
+      else this.profile.accessibility.push(need);
+    },
+
+    toggleVehicleCap(cap) {
+      const idx = this.profile.vehicleCaps.indexOf(cap);
+      if (idx > -1) this.profile.vehicleCaps.splice(idx, 1);
+      else this.profile.vehicleCaps.push(cap);
+    },
+
+    saveProfile() {
+      if (!this.profile.name || !this.profile.role || !this.profile.location) {
+        this.showToast('⚠️', 'Please fill in name, role, and location');
+        return;
+      }
+      this.profileComplete = true;
+      this.showProfile = false;
+      this.save();
+      this.showToast('✅', 'Profile saved!');
+      
+      if (this.profile.role === 'coordinator' && this.volunteers.length === 0) {
+        this.addSampleData();
+      }
+    },
+
+    // Trip booking
+    toggleTripNeed(need) {
+      const idx = this.newTrip.needs.indexOf(need);
+      if (idx > -1) this.newTrip.needs.splice(idx, 1);
+      else this.newTrip.needs.push(need);
+    },
+
+    canSubmitTrip() {
+      return this.newTrip.type && this.newTrip.pickup && this.newTrip.destination && this.newTrip.date && this.newTrip.time;
+    },
+
+    async submitTrip() {
+      if (!this.canSubmitTrip()) {
+        this.showToast('⚠️', 'Please fill in all required fields');
+        return;
+      }
+      const trip = {
+        id: Date.now().toString(),
+        ...JSON.parse(JSON.stringify(this.newTrip)),
+        status: 'Pending',
+        riderName: this.profile.name,
+        riderPhone: this.profile.phone,
+        createdAt: new Date().toISOString(),
+        driver: null
+      };
+      this.allTrips.push(trip);
+      this.addNotification(`🚐 Ride requested: ${trip.destination} on ${this.formatTripDate(trip.date)}`);
+      this.save();
+      this.showToast('🎉', 'Ride requested! We\'ll match you with a driver soon.');
+      
+      // Reset form
+      this.newTrip = { type:'', pickup: this.profile.location || '', destination:'', date:'', time:'', roundTrip:false, returnTime:'', passengers:1, needs:[], notes:'' };
+      this.optimizationResult = '';
+      this.tab = 'trips';
+
+      // Auto-match with AI
+      await this.autoMatchDriver(trip);
+    },
+
+    cancelTrip(id) {
+      const trip = this.allTrips.find(t => t.id === id);
+      if (trip) {
+        trip.status = 'Cancelled';
+        this.addNotification(`❌ Trip to ${trip.destination} cancelled`);
+        this.save();
+        this.showToast('🗑️', 'Trip cancelled');
+      }
+    },
+
+    acceptRequest(id) {
+      const trip = this.allTrips.find(t => t.id === id);
+      if (trip) {
+        trip.status = 'Confirmed';
+        trip.driver = this.profile.name;
+        this.addNotification(`✅ You accepted ride for ${trip.riderName || 'rider'} to ${trip.destination}`);
+        this.save();
+        this.showToast('✅', 'Ride accepted! Rider will be notified.');
+      }
+    },
+
+    declineRequest(id) {
+      const trip = this.allTrips.find(t => t.id === id);
+      if (trip) {
+        this.addNotification(`⏩ Passed on ride to ${trip.destination} - will be offered to others`);
+        this.showToast('⏩', 'Passed. Another volunteer will be notified.');
+      }
+    },
+
+    // AI Functions
+    async autoMatchDriver(trip) {
+      if (this.volunteers.length === 0) return;
+      this.aiWorking = true;
+      try {
+        const prompt = `You are a rural community transport optimizer. Given this ride request and available volunteer drivers, find the best match considering accessibility needs, location proximity, and vehicle capabilities.
+
+Ride Request:
+- From: ${trip.pickup}
+- To: ${trip.destination}
+- Date/Time: ${trip.date} at ${trip.time}
+- Passengers: ${trip.passengers}
+- Accessibility needs: ${trip.needs.join(', ') || 'None'}
+- Round trip: ${trip.roundTrip ? 'Yes, return at ' + trip.returnTime : 'No'}
+
+Available Volunteers:
+${this.volunteers.map((v,i) => `${i+1}. ${v.name} - Location: ${v.location} - Vehicle: ${v.vehicleCaps.join(', ')} - Available: ${v.available}`).join('\n')}
+
+Return a JSON object with these exact keys and types:
+- "matchedDriver": string (name of best matched driver, or "none" if no good match)
+- "confidence": number (0-100 confidence score)
+- "reason": string (brief explanation of why this is the best match)
+- "estimatedPickupTime": string (e.g. "15 minutes before appointment")
+- "sharedRideOpportunity": boolean (could this be combined with another trip?)
+- "subsidyEligible": boolean (is this trip likely subsidy eligible based on type?)
+- "estimatedCost": string (estimated cost or "Free - volunteer" or "Subsidized")`;
+
+        const result = await callAI(prompt);
+        if (result && result.matchedDriver && result.matchedDriver !== 'none') {
+          const tripIdx = this.allTrips.findIndex(t => t.id === trip.id);
+          if (tripIdx > -1) {
+            this.allTrips[tripIdx].driver = result.matchedDriver;
+            this.allTrips[tripIdx].status = 'Confirmed';
+            if (result.subsidyEligible) {
+              this.subsidyUsed += 15;
+            }
+            this.addNotification(`🚗 ${result.matchedDriver} matched as your driver! ${result.reason}`);
+            this.save();
+            this.showToast('🎉', `Matched with ${result.matchedDriver}!`);
+          }
+        }
+      } catch (err) {
+        console.error('Auto-match error:', err);
+      }
+      this.aiWorking = false;
+    },
+
+    async optimizeTrip() {
+      if (!this.newTrip.pickup || !this.newTrip.destination) {
+        this.showToast('⚠️', 'Please enter pickup and destination first');
+        return;
+      }
+      this.aiWorking = true;
+      this.optimizationResult = '';
+      try {
+        const existingTrips = this.allTrips.filter(t => t.status === 'Pending' || t.status === 'Confirmed');
+        const prompt = `You are a rural community transport route optimizer. Analyze this new ride request and existing scheduled trips to find optimization opportunities.
+
+New Request:
+- From: ${this.newTrip.pickup}
+- To: ${this.newTrip.destination}
+- Date: ${this.newTrip.date || 'Not set yet'}
+- Time: ${this.newTrip.time || 'Not set yet'}
+- Needs: ${this.newTrip.needs.join(', ') || 'None'}
+- Passengers: ${this.newTrip.passengers}
+
+Existing Scheduled Trips (${existingTrips.length}):
+${existingTrips.map(t => `- ${t.pickup} → ${t.destination} on ${t.date} at ${t.time} (${t.needs.join(',') || 'no special needs'})`).join('\n') || 'None'}
+
+Available transport types: Volunteer drivers, Community shuttle (runs Mon/Wed/Fri mornings), Paratransit (weekdays, needs 48hr advance booking), Church van (Sundays)
+
+Return a JSON object with these exact keys and types:
+- "bestOption": string (recommended transport type)
+- "sharedRidePossible": boolean
+- "sharedRideDetails": string (details if shared ride possible, otherwise empty string)
+- "estimatedDuration": string (e.g. "25 minutes")
+- "suggestedPickupTime": string (suggested pickup time)
+- "costEstimate": string (e.g. "Free", "$5 subsidized", etc.)
+- "subsidyNote": string (any subsidy eligibility information)
+- "tips": string (helpful tips for the rider)
+- "alternativeDate": string (if a better date exists for shared rides, otherwise empty string)`;
+
+        const result = await callAI(prompt);
+        if (result) {
+          let html = `<p><strong>🚐 Best Option:</strong> ${result.bestOption}</p>`;
+          html += `<p><strong>⏱️ Duration:</strong> ${result.estimatedDuration}</p>`;
+          html += `<p><strong>💰 Cost:</strong> ${result.costEstimate}</p>`;
+          if (result.sharedRidePossible) {
+            html += `<p class="text-forest-600"><strong>🤝 Shared Ride:</strong> ${result.sharedRideDetails}</p>`;
+          }
+          if (result.subsidyNote) {
+            html += `<p><strong>💳 Subsidy:</strong> ${result.subsidyNote}</p>`;
+          }
+          if (result.suggestedPickupTime) {
+            html += `<p><strong>🕐 Suggested Pickup:</strong> ${result.suggestedPickupTime}</p>`;
+          }
+          if (result.alternativeDate) {
+            html += `<p class="text-sky-600"><strong>📅 Better Date:</strong> ${result.alternativeDate}</p>`;
+          }
+          if (result.tips) {
+            html += `<p class="mt-1 text-warmgray-500"><strong>💡</strong> ${result.tips}</p>`;
+          }
+          this.optimizationResult = html;
+        }
+      } catch (err) {
+        this.errorMsg = err.message || 'Optimization failed. Please try again.';
+      }
+      this.aiWorking = false;
+    },
+
+    async predictDemand() {
+      this.aiWorking = true;
+      this.demandInsight = '';
+      try {
+        const tripHistory = this.allTrips.slice(-20);
+        const prompt = `You are a rural community transport demand prediction AI. Based on the trip history and typical rural community patterns, predict demand for the coming week.
+
+Recent Trip History (${tripHistory.length} trips):
+${tripHistory.map(t => `- ${t.type} trip to ${t.destination} on ${t.date} (${t.status})`).join('\n') || 'No history yet - generate typical rural patterns'}
+
+Community context: Rural area with elderly population, nearest town 15 miles away, medical center 20 miles, grocery store 12 miles. Weekly events: church Sunday, coffee social Wednesday, mobile clinic monthly.
+
+Current volunteers available: ${this.volunteers.length}
+
+Return a JSON object with these exact keys and types:
+- "peakDay": string (predicted busiest day)
+- "peakType": string (most requested trip type)
+- "estimatedTrips": number (predicted total trips this week)
+- "hotspots": string (predicted high-demand locations/routes)
+- "volunteerGap": string (description of any volunteer shortage risk)
+- "recommendation": string (action recommendation for coordinators)
+- "weatherNote": string (general seasonal weather consideration)
+- "socialIsolationRisk": string (identify riders at risk of isolation)`;
+
+        const result = await callAI(prompt);
+        if (result) {
+          let html = `<p><strong>📊 Predicted Trips:</strong> ~${result.estimatedTrips} this week</p>`;
+          html += `<p><strong>📅 Busiest Day:</strong> ${result.peakDay}</p>`;
+          html += `<p><strong>🏥 Top Need:</strong> ${result.peakType}</p>`;
+          html += `<p><strong>📍 Hotspots:</strong> ${result.hotspots}</p>`;
+          if (result.volunteerGap) {
+            html += `<p class="text-sunset-500"><strong>⚠️ Volunteer Gap:</strong> ${result.volunteerGap}</p>`;
+          }
+          if (result.socialIsolationRisk) {
+            html += `<p class="text-red-500"><strong>❤️ Isolation Risk:</strong> ${result.socialIsolationRisk}</p>`;
+          }
+          html += `<p class="mt-1 text-forest-600"><strong>💡 Recommendation:</strong> ${result.recommendation}</p>`;
+          if (result.weatherNote) {
+            html += `<p class="text-warmgray-400 text-xs mt-1">🌤️ ${result.weatherNote}</p>`;
+          }
+          this.demandInsight = html;
+        }
+      } catch (err) {
+        this.errorMsg = err.message || 'Prediction failed. Please try again.';
+      }
+      this.aiWorking = false;
+    },
+
+    async batchOptimize() {
+      this.aiWorking = true;
+      this.batchResult = '';
+      try {
+        const pending = this.pendingRequests;
+        const prompt = `You are a rural transport fleet optimizer. Optimize the following ride requests to maximize shared rides, minimize total driving distance, and respect accessibility constraints.
+
+Pending Ride Requests:
+${pending.map((t, i) => `${i+1}. ${t.riderName || 'Rider'}: ${t.pickup} → ${t.destination}, ${t.date} ${t.time}, Needs: ${t.needs.join(',') || 'none'}, Passengers: ${t.passengers}`).join('\n')}
+
+Available Fleet:
+- Volunteer drivers: ${this.volunteers.map(v => `${v.name} (${v.location}, ${v.vehicleCaps.join(',')})`).join('; ') || 'None registered'}
+- Community shuttle: Seats 8, wheelchair accessible, runs Mon/Wed/Fri
+- Paratransit van: Seats 4, full accessibility, needs 48hr notice
+
+Return a JSON object with these exact keys and types:
+- "routes": string (optimized route assignments as formatted text with line breaks using <br>)
+- "sharedRides": number (how many rides can be combined)
+- "estimatedSavings": string (estimated miles/time saved)
+- "unserviceable": string (any requests that cannot be served and why, empty string if all served)
+- "volunteerAssignments": string (which volunteer assigned to which route, formatted with <br>)
+- "actionItems": string (immediate actions needed, formatted with <br>)`;
+
+        const result = await callAI(prompt);
+        if (result) {
+          let html = `<p><strong>🔄 Shared Rides:</strong> ${result.sharedRides} combined</p>`;
+          html += `<p><strong>💰 Savings:</strong> ${result.estimatedSavings}</p>`;
+          if (result.routes) html += `<p class="mt-2"><strong>🛣️ Routes:</strong><br>${result.routes}</p>`;
+          if (result.volunteerAssignments) html += `<p class="mt-2"><strong>🚗 Assignments:</strong><br>${result.volunteerAssignments}</p>`;
+          if (result.unserviceable) html += `<p class="mt-2 text-red-500"><strong>⚠️ Cannot Serve:</strong> ${result.unserviceable}</p>`;
+          if (result.actionItems) html += `<p class="mt-2 text-forest-600"><strong>📋 Actions:</strong><br>${result.actionItems}</p>`;
+          this.batchResult = html;
+        }
+      } catch (err) {
+        this.errorMsg = err.message || 'Batch optimization failed.';
+      }
+      this.aiWorking = false;
+    },
+
+    async generateForecast() {
+      this.aiWorking = true;
+      this.forecastResult = '';
+      try {
+        const prompt = `You are a rural community transport demand forecasting AI. Generate a detailed 7-day forecast for a rural area's transport needs.
+
+Context:
+- Total trips in system: ${this.allTrips.length}
+- Active volunteers: ${this.volunteers.length}
+- Recent trip types: ${[...new Set(this.allTrips.map(t => t.type))].join(', ') || 'Medical, Social, Grocery'}
+- Common accessibility needs: ${[...new Set(this.allTrips.flatMap(t => t.needs))].join(', ') || 'Wheelchair, Walker'}
+- Budget remaining: $${Math.max(0, this.subsidyBudget - this.subsidyUsed)}
+
+Generate a forecast. Return a JSON object with these exact keys and types:
+- "monday": string (brief forecast for Monday)
+- "tuesday": string (brief forecast for Tuesday)
+- "wednesday": string (brief forecast for Wednesday)
+- "thursday": string (brief forecast for Thursday)
+- "friday": string (brief forecast for Friday)
+- "saturday": string (brief forecast for Saturday)
+- "sunday": string (brief forecast for Sunday)
+- "totalExpectedTrips": number
+- "peakDay": string (day name)
+- "volunteerHoursNeeded": number
+- "budgetForecast": string (expected spending)
+- "keyRisk": string (biggest risk this week)
+- "keyOpportunity": string (biggest opportunity)`;
+
+        const result = await callAI(prompt);
+        if (result) {
+          const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+          const dayLabels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+          let html = '<div class="space-y-1">';
+          days.forEach((d, i) => {
+            const isToday = new Date().getDay() === (i + 1) % 7;
+            html += `<div class="flex gap-2 items-start ${isToday ? 'bg-forest-100 -mx-1 px-1 rounded' : ''}">
+              <span class="font-bold text-xs w-8 text-forest-600 pt-0.5">${dayLabels[i]}</span>
+              <span class="text-xs text-warmgray-600 flex-1">${result[d] || '-'}</span>
+            </div>`;
+          });
+          html += '</div>';
+          html += `<div class="mt-3 pt-2 border-t border-warmgray-100 space-y-1">`;
+          html += `<p class="text-xs"><strong>📊 Total Expected:</strong> ${result.totalExpectedTrips} trips</p>`;
+          html += `<p class="text-xs"><strong>📅 Peak Day:</strong> ${result.peakDay}</p>`;
+          html += `<p class="text-xs"><strong>⏰ Volunteer Hours:</strong> ${result.volunteerHoursNeeded}h needed</p>`;
+          html += `<p class="text-xs"><strong>💰 Budget:</strong> ${result.budgetForecast}</p>`;
+          if (result.keyRisk) html += `<p class="text-xs text-red-500"><strong>⚠️ Risk:</strong> ${result.keyRisk}</p>`;
+          if (result.keyOpportunity) html += `<p class="text-xs text-forest-600"><strong>💡 Opportunity:</strong> ${result.keyOpportunity}</p>`;
+          html += '</div>';
+          this.forecastResult = html;
+        }
+      } catch (err) {
+        this.errorMsg = err.message || 'Forecast generation failed.';
+      }
+      this.aiWorking = false;
+    },
+
+    // Sample Data
+    addSampleData() {
+      this.volunteers = [
+        { id: '1', name: 'Bob Johnson', location: 'Oak Hill', vehicleCaps: ['Extra Legroom', '4+ Passengers'], available: true },
+        { id: '2', name: 'Mary Williams', location: 'Maple Grove', vehicleCaps: ['Wheelchair Ramp', 'Oxygen Tank'], available: true },
+        { id: '3', name: 'Tom Davis', location: 'Pine Valley', vehicleCaps: ['Extra Legroom'], available: false }
+      ];
+      
+      const now = new Date();
+      const tomorrow = new Date(now.getTime() + 86400000);
+      const nextWeek = new Date(now.getTime() + 7 * 86400000);
+      
+      this.allTrips = [
+        {
+          id: '100', type: 'Medical', pickup: 'Elm Street 42', destination: 'County Medical Center',
+          date: tomorrow.toISOString().split('T')[0], time: '09:00', roundTrip: true, returnTime: '11:00',
+          passengers: 1, needs: ['Walker'], notes: 'Annual checkup', status: 'Confirmed',
+          riderName: 'Dorothy Smith', driver: 'Mary Williams', createdAt: now.toISOString()
+        },
+        {
+          id: '101', type: 'Social', pickup: 'County Rd 12', destination: 'Community Center',
+          date: nextWeek.toISOString().split('T')[0], time: '10:00', roundTrip: true, returnTime: '12:00',
+          passengers: 2, needs: [], notes: 'Coffee social', status: 'Pending',
+          riderName: 'Ruth Anderson', driver: null, createdAt: now.toISOString()
+        },
+        {
+          id: '102', type: 'Grocery', pickup: 'Maple Ave 8', destination: 'FoodMart',
+          date: nextWeek.toISOString().split('T')[0], time: '13:00', roundTrip: true, returnTime: '15:00',
+          passengers: 1, needs: ['Wheelchair'], notes: '', status: 'Pending',
+          riderName: 'Harold Brown', driver: null, createdAt: now.toISOString()
+        }
+      ];
+      this.subsidyUsed = 245;
+      this.save();
+    },
+
+    addSampleVolunteer() {
+      const names = ['Sarah Miller', 'James Wilson', 'Patricia Moore', 'Robert Taylor', 'Linda Anderson'];
+      const locations = ['Creek Crossing', 'Hill Top', 'River Bend', 'Meadow Lane', 'Church Road'];
+      const caps = [['Extra Legroom'], ['Wheelchair Ramp', '4+ Passengers'], ['Oxygen Tank'], ['Extra Legroom', '4+ Passengers']];
+      const i = this.volunteers.length % names.length;
+      this.volunteers.push({
+        id: Date.now().toString(),
+        name: names[i],
+        location: locations[i],
+        vehicleCaps: caps[i % caps.length],
+        available: Math.random() > 0.3
+      });
+      this.save();
+      this.showToast('🚗', `${names[i]} added as volunteer!`);
+    },
+
+    // Helpers
+    getGreeting() {
+      const h = new Date().getHours();
+      if (h < 12) return 'Good morning! Where do you need to go today?';
+      if (h < 17) return 'Good afternoon! Need a ride somewhere?';
+      return 'Good evening! Planning tomorrow\'s trip?';
+    },
+
+    todayDate() {
+      return new Date().toISOString().split('T')[0];
+    },
+
+    formatTripDate(dateStr) {
+      if (!dateStr) return '';
+      const d = new Date(dateStr + 'T00:00:00');
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const tomorrow = new Date(today.getTime() + 86400000);
+      if (d.getTime() === today.getTime()) return 'Today';
+      if (d.getTime() === tomorrow.getTime()) return 'Tomorrow';
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    },
+
+    tripTypeEmoji(type) {
+      const m = { Medical: '🏥', Social: '☕', Grocery: '🛒', Pharmacy: '💊', Church: '⛪', Other: '📍' };
+      return m[type] || '🚐';
+    },
+
+    showToast(emoji, msg) {
+      const toast = { emoji, msg, show: true };
+      this.toasts.push(toast);
+      setTimeout(() => { toast.show = false; }, 4000);
+      setTimeout(() => { this.toasts = this.toasts.filter(t => t !== toast); }, 4500);
+    },
+
+    addNotification(msg) {
+      this.notifications.unshift({ msg, time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) });
+      this.unreadNotifications++;
+      if (this.notifications.length > 20) this.notifications = this.notifications.slice(0, 20);
+      this.save();
+    }
+  };
+}
+</script>
+
+</body>
+</html>
